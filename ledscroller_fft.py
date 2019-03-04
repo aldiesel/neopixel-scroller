@@ -93,9 +93,9 @@ class NeoPixel_FT232H(object):
 		# signal.
 		self.spi.write(self.buffer)
 	
-	def setLightColumn(self,val,col,color):
+	def setLightColumn(self,maxRow,col,color):
 		for row in range(self.rows):
-			setColor = color if ((self.rows-1)-row < val) else {'red':0,'green':0,'blue':0}
+			setColor = color if (row > maxRow) else {'red':0,'green':0,'blue':0}
 			self.set_pixelRC(row+1,col,setColor)
  
 # Run this code when the script is called at the command line:
@@ -111,6 +111,7 @@ if __name__ == '__main__':
 	print 'Total pixels: {0}, Rows: {1}, Columns: {2}'.format(pixels.num_pixels,pixels.rows,pixels.cols)
 	pixels.clear_pixels()
 	time.sleep(delay)
+	maxRows = [0]*pixels.cols
 	
 	for row in range(pixels.rows):
 		for col in range(pixels.cols):
@@ -142,7 +143,7 @@ if __name__ == '__main__':
 		time.sleep(delay)
 
 	#path to file
-	filePath = ".\\Just One Second (Apex Remix).mp3"
+	filePath = ".\\The Longest Road (Deadmau5 Remix).mp3"
 	fileType = filePath.split('.')[-1]
 	songName = filePath.split('\\')[-1].split('.')[0]
 	
@@ -200,8 +201,10 @@ if __name__ == '__main__':
 	p = vlc.MediaPlayer(filePath)
 	p.play()
 	audioDelay = 0.3
-	startTime = nextTime = time.time()+audioDelay
+	startTime = nextTime = time.time()
+	nextTime = nextTime + audioDelay
 	tidx = 0
+	dropRate = 2.0
 	
 	while nextTime < startTime + len(sound)/1000.0:
 		if time.time() > nextTime:
@@ -221,7 +224,12 @@ if __name__ == '__main__':
 			#e = sliceEnergies[tidx]
 			e = sliceEnergy
 			for col in range(min(pixels.cols,len(e))):
-				pixels.setLightColumn(e[col],col+1,colors[col])
+				maxRows[col] = maxRows[col] + dropRate*dt
+				maxRow = (pixels.rows-1)-e[col]
+				maxRows[col] = min(maxRow+2,maxRows[col],8)
+				maxRows[col] = max(maxRows[col],1)
+				pixels.setLightColumn(int(maxRow),col+1,colors[col])
+				#pixels.set_pixelRC(int(maxRows[col]),col+1,colors[col])
 			pixels.show()
 			tidx = tidx + 1
 			#if tidx >= len(sliceEnergies):
@@ -231,5 +239,5 @@ if __name__ == '__main__':
 		time.sleep(0.001)
 
 	print 'Name: {0}, Song length: {1}:{2}, Sample Rate: {3} kHz'.format(songName,int(math.floor(minutes)),int(math.floor(sec)),fs/1000.0)
-	print bands
+	#print bands
 	#print f
