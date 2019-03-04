@@ -103,8 +103,8 @@ if __name__ == '__main__':
 	# Define the number of pixels in the NeoPixel strip.
 	# Only up to ~340 pixels can be written using the FT232H.
 	# Create a NeoPixel_FT232H object.
-	pixels = NeoPixel_FT232H(256,8)
-	pixels.set_brightness(25)
+	pixels = NeoPixel_FT232H(512,8)
+	pixels.set_brightness(15)
 	delay = 0.02
 	# Animate each pixel turning red.
 	# Loop through each pixel.
@@ -142,7 +142,7 @@ if __name__ == '__main__':
 		time.sleep(delay)
 
 	#path to file
-	filePath = ".\\meant.mp3"
+	filePath = ".\\Just One Second (Apex Remix).mp3"
 	fileType = filePath.split('.')[-1]
 	songName = filePath.split('\\')[-1].split('.')[0]
 	
@@ -181,15 +181,20 @@ if __name__ == '__main__':
 	bandIndex = np.floor(np.array(bands)*dt+1.0)
 	bandIndex = bandIndex.astype(int)
 	
-	colors = [
-	{'red':0xFF,'green':0x00,'blue':0x00},{'red':0xFF,'green':0x33,'blue':0x00},{'red':0xFF,'green':0x66,'blue':0x00},{'red':0xFF,'green':0x99,'blue':0x00},
-	{'red':0xFF,'green':0xCC,'blue':0x00},{'red':0xFE,'green':0xFF,'blue':0x00},{'red':0xCB,'green':0xFF,'blue':0x00},{'red':0x98,'green':0xFF,'blue':0x00},
-	{'red':0x65,'green':0xFF,'blue':0x00},{'red':0x32,'green':0xFF,'blue':0x00},{'red':0x00,'green':0xFF,'blue':0x00},{'red':0x00,'green':0xFF,'blue':0x33},
-	{'red':0x00,'green':0xFF,'blue':0x60},{'red':0x00,'green':0xFF,'blue':0x83},{'red':0x00,'green':0xFF,'blue':0xBC},{'red':0x00,'green':0xFF,'blue':0xEA},
-	{'red':0x00,'green':0xE5,'blue':0xFF},{'red':0x00,'green':0xB7,'blue':0xFF},{'red':0x00,'green':0x89,'blue':0xFF},{'red':0x00,'green':0x5B,'blue':0xFF},
-	{'red':0x00,'green':0x2D,'blue':0xFF},{'red':0x00,'green':0x00,'blue':0xFF},{'red':0x33,'green':0x00,'blue':0xFF},{'red':0x66,'green':0x00,'blue':0xFF},
-	{'red':0x98,'green':0x00,'blue':0xFF},{'red':0xCB,'green':0x00,'blue':0xFF},{'red':0xFF,'green':0x00,'blue':0xFF},{'red':0xFF,'green':0x00,'blue':0xCB},
-	{'red':0xFF,'green':0x00,'blue':0x98},{'red':0xFF,'green':0x00,'blue':0x66},{'red':0xFF,'green':0x00,'blue':0x33},{'red':0xFF,'green':0x00,'blue':0x00}]
+	colors = []
+	
+	for i in range(12):
+		colors.append({'red':0xFF,'green':i*255/11,'blue':0x00})
+	for i in range(12):
+		colors.append({'red':0xFF-i*255/11,'green':0xFF,'blue':0x00})
+	for i in range(12):
+		colors.append({'red':0x00,'green':0xFF,'blue':i*255/11})
+	for i in range(12):
+		colors.append({'red':0x00,'green':0xFF-i*255/11,'blue':0xFF})
+	for i in range(12):
+		colors.append({'red':i*255/11,'green':0x00,'blue':0xFF})
+	for i in range(12):
+		colors.append({'red':0xFF,'green':0x00,'blue':0xFF-i*255/11})
 		
 	#play the file
 	p = vlc.MediaPlayer(filePath)
@@ -216,7 +221,7 @@ if __name__ == '__main__':
 			#e = sliceEnergies[tidx]
 			e = sliceEnergy
 			for col in range(min(pixels.cols,len(e))):
-				pixels.setLightColumn(e[col*2],col+1,colors[col])
+				pixels.setLightColumn(e[col],col+1,colors[col])
 			pixels.show()
 			tidx = tidx + 1
 			#if tidx >= len(sliceEnergies):
