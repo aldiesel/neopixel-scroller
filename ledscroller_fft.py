@@ -11,44 +11,29 @@ import ftdi1 as ftdi
 import Adafruit_GPIO as GPIO
 import Adafruit_GPIO.FT232H as FT232H
  
+NEOPIXEL_HIGH8 	= 0b11111000
+NEOPIXEL_LOW8	= 0b11100000
+NEOPIXEL_HIGH3 	= 0b110
+NEOPIXEL_LOW3	= 0b100
+BYTES_PER_PIXEL	= 3
+SPI_BAUD		= 2400000
+#BYTES_PER_PIXEL	= 24
+#SPI_BAUD		= 6000000 
  
 class NeoPixel_FT232H(object):
 	def __init__(self, num_pixels, num_rows):
-		#devices = FT232H.enumerate_device_serials()
-		#for device in devices:
-		#	print(device)
-		
-		## Create temp def
-		#vid = 0x0403   # Default FTDI FT232H vendor ID
-		#pid = 0x6014   # Default FTDI FT232H product ID
-		## Create a libftdi context.
-		#ctx = None
-		#ctx = ftdi.new()
-		## Enumerate FTDI devices.
-		#device_list = None
-		#count, device_list = ftdi.usb_find_all(ctx, vid, pid)
-		#while device_list is not None:
-		#	# Get USB device strings and add serial to list of devices.
-		#	ret, manufacturer, description, serial = ftdi.usb_get_strings(ctx, device_list.dev, 256, 256, 256)
-		#	print 'ret: {0}, manufacturer: {1}, description: {2}, serial: |{3}|'.format(ret,manufacturer,description,serial)
-		#	device_list = device_list.next
-		## Make sure to clean up list and context when done.
-		#if device_list is not None:
-		#	ftdi.list_free(device_list)
-		#if ctx is not None:
-		#	ftdi.free(ctx)	
-		
 		# Create an FT232H object.
 		self.ft232h = FT232H.FT232H()
 		# Create a SPI interface for the FT232H object.  Set the SPI bus to 6mhz.
-		self.spi    = FT232H.SPI(self.ft232h, max_speed_hz=6000000)
+		self.spi    = FT232H.SPI(self.ft232h, max_speed_hz=SPI_BAUD)
 		# Create a pixel data buffer and lookup table.
-		self.buffer = bytearray(num_pixels*24)
+		self.buffer = bytearray(num_pixels*BYTES_PER_PIXEL*3)
 		self.lookup = self.build_byte_lookup()
+		#print self.lookup
 		self.set_brightness(25) #set brightness to 25% by default
-		self.num_pixels = num_pixels
-		self.rows = num_rows
-		self.cols = num_pixels/num_rows
+		self.num_pixels	= num_pixels
+		self.rows 		= num_rows
+		self.cols 		= num_pixels/num_rows
  
 	def build_byte_lookup(self):
 		# Create a lookup table to map all byte values to 8 byte values which
@@ -57,11 +42,22 @@ class NeoPixel_FT232H(object):
 		lookup = {}
 		for i in range(256):
 			value = bytearray()
+			fullint = 0x00
+			#for j in range(7, -1, -1):
+			#	value.append(NEOPIXEL_LOW8 if (((i >> j) & 1) == 0) else NEOPIXEL_HIGH8)
 			for j in range(7, -1, -1):
-				if ((i >> j) & 1) == 0:
-					value.append(0b11100000)
-				else:
-					value.append(0b11111000)
+				signal = NEOPIXEL_LOW3 if (((i >> j) & 1) == 0) else NEOPIXEL_HIGH3
+				fullint = fullint | signal
+				fullint = fullint << 3
+			
+			fullint = fullint >> 3
+			#print("{0:b}".format(fullint))
+			#grab 1 byte at a time and place into the lookup table
+			for k in range(2, -1, -1):
+				val = (fullint & (0xFF << 8*k)) >> (8*k)
+				#print("{0:b}".format(val))
+				value.append(val)
+				
 			lookup[i] = value
 		return lookup
 	
@@ -75,11 +71,11 @@ class NeoPixel_FT232H(object):
  
 	def set_pixel_color(self, n, r, g, b):
 		# Set the pixel RGB color for the pixel at position n.
-		# Assumes GRB NeoPixel color ordering, but it's easy to change below.
-		index = n*24
-		self.buffer[index   :index+8 ] = self.lookup[int(g*self.bright)]
-		self.buffer[index+8 :index+16] = self.lookup[int(r*self.bright)]
-		self.buffer[index+16:index+24] = self.lookup[int(b*self.bright)]
+		# Assumes GRB NeoPixel color ordering, but it's easy to change below.	
+		index = n*BYTES_PER_PIXEL*3
+		self.buffer[index  					:index+  BYTES_PER_PIXEL] = self.lookup[int(g*self.bright)]
+		self.buffer[index+  BYTES_PER_PIXEL	:index+2*BYTES_PER_PIXEL] = self.lookup[int(r*self.bright)]
+		self.buffer[index+2*BYTES_PER_PIXEL	:index+3*BYTES_PER_PIXEL] = self.lookup[int(b*self.bright)]
 	
 	def set_pixelRC(self, row, col, color):
 		# Set the pixel RGB color for the pixel at position n.
@@ -87,10 +83,7 @@ class NeoPixel_FT232H(object):
 		rowOffset = (row if col%2 == 1 else (self.rows+1 - row)) - 1
 		colOffset = (col-1)*self.rows
 		n = rowOffset + colOffset
-		index = n*24
-		self.buffer[index   :index+8 ] = self.lookup[int(color['green']*self.bright)]
-		self.buffer[index+8 :index+16] = self.lookup[int(color['red']*self.bright)]
-		self.buffer[index+16:index+24] = self.lookup[int(color['blue']*self.bright)]
+		self.set_pixel_color(n,color['red'],color['green'],color['blue'])
 	
 	def set_brightness(self, brightpcent):
 		self.bright = math.pow(brightpcent/100.0,2.2)
@@ -102,14 +95,8 @@ class NeoPixel_FT232H(object):
 	
 	def setLightColumn(self,val,col,color):
 		for row in range(self.rows):
-			setColor = color if (row < val) else {'red':0,'green':0,'blue':0}
+			setColor = color if ((self.rows-1)-row < val) else {'red':0,'green':0,'blue':0}
 			self.set_pixelRC(row+1,col,setColor)
-			#if row > val:
-			#	print 'no color'
-			#if row == 7 and col == 10:
-			#	print val,row+1,col
-
-	
  
 # Run this code when the script is called at the command line:
 if __name__ == '__main__':
@@ -118,7 +105,7 @@ if __name__ == '__main__':
 	# Create a NeoPixel_FT232H object.
 	pixels = NeoPixel_FT232H(256,8)
 	pixels.set_brightness(25)
-	delay = 0.05
+	delay = 0.02
 	# Animate each pixel turning red.
 	# Loop through each pixel.
 	print 'Total pixels: {0}, Rows: {1}, Columns: {2}'.format(pixels.num_pixels,pixels.rows,pixels.cols)
@@ -155,18 +142,15 @@ if __name__ == '__main__':
 		time.sleep(delay)
 
 	#path to file
-	filePath = ".\\paris.mp3"
+	filePath = ".\\meant.mp3"
 	fileType = filePath.split('.')[-1]
 	songName = filePath.split('\\')[-1].split('.')[0]
 	
 	#open audio file
 	sound = AudioSegment.from_file(filePath, format=fileType)
 	stereosample = sound.get_array_of_samples()
-	left = stereosample[::2]
-	right = stereosample[1::2]
-	#print len(left),len(right),len(stereosample)
-	samples = np.add(left,right)
-	#print len(stereosample)/len(samples)
+	#add left and right channels together
+	samples = np.add(stereosample[::2],stereosample[1::2])
 	
 	#figure out how long it is
 	minutes = len(sound)/(60000.0)
@@ -193,10 +177,9 @@ if __name__ == '__main__':
 	N = int(fs*dt)
 	f = range(0,fs/2,fs/N)
 	tot_e = 1.0
-	iterMax = min(len(samples),10)
 	iterMax = len(samples)
-	index = np.floor(np.array(bands)*N/fs+1.0)
-	index = index.astype(int)
+	bandIndex = np.floor(np.array(bands)*dt+1.0)
+	bandIndex = bandIndex.astype(int)
 	
 	colors = [
 	{'red':0xFF,'green':0x00,'blue':0x00},{'red':0xFF,'green':0x33,'blue':0x00},{'red':0xFF,'green':0x66,'blue':0x00},{'red':0xFF,'green':0x99,'blue':0x00},
@@ -207,37 +190,40 @@ if __name__ == '__main__':
 	{'red':0x00,'green':0x2D,'blue':0xFF},{'red':0x00,'green':0x00,'blue':0xFF},{'red':0x33,'green':0x00,'blue':0xFF},{'red':0x66,'green':0x00,'blue':0xFF},
 	{'red':0x98,'green':0x00,'blue':0xFF},{'red':0xCB,'green':0x00,'blue':0xFF},{'red':0xFF,'green':0x00,'blue':0xFF},{'red':0xFF,'green':0x00,'blue':0xCB},
 	{'red':0xFF,'green':0x00,'blue':0x98},{'red':0xFF,'green':0x00,'blue':0x66},{'red':0xFF,'green':0x00,'blue':0x33},{'red':0xFF,'green':0x00,'blue':0x00}]
-	
-	for jj in range(iterMax):
-		t0 = int(round(fs*dt*jj))
-		tf = int(round(fs*dt) + t0)-1
-		if tf > len(samples):
-			break
-		#print jj,t0,tf
-		slice = samples[t0:tf]
-		sliceFFT = np.fft.fft(slice)
-		sliceFFTA = np.abs(sliceFFT)[0:len(f)-1]
-		#if jj == 4:
-		#	print index
-		for ii in range(len(bands)-2):
-			energy[ii] = sum(sliceFFTA[index[ii]:index[ii+1]])
-		sliceEnergy = energy*jj/tot_e
-		sliceEnergies.append(sliceEnergy)
-	
-		tot_e = tot_e + np.mean(energy)
 		
 	#play the file
 	p = vlc.MediaPlayer(filePath)
 	p.play()
-		
-	print len(sliceEnergies)
-	for e in sliceEnergies:
-		for col in range(min(pixels.cols,len(e))):
-			pixels.setLightColumn(e[col*2],col+1,colors[col])
-		
-		#print sliceEnergy
-		pixels.show()
-		time.sleep(dt*0.87)
+	audioDelay = 0.3
+	startTime = nextTime = time.time()+audioDelay
+	tidx = 0
+	
+	while nextTime < startTime + len(sound)/1000.0:
+		if time.time() > nextTime:
+			t0 = int(round(fs*dt*tidx))
+			tf = int(round(fs*dt) + t0)-1
+			if tf > len(samples):
+				break
+			slice = samples[t0:tf]
+			sliceFFT = np.fft.rfft(slice)
+			sliceFFTA = np.abs(sliceFFT)[0:len(f)-1]
+			for ii in range(len(bands)-2):
+				energy[ii] = sum(sliceFFTA[bandIndex[ii]:bandIndex[ii+1]])
+			sliceEnergy = energy*tidx/tot_e
+			#sliceEnergies.append(sliceEnergy)
+			
+			tot_e = tot_e + np.mean(energy)
+			#e = sliceEnergies[tidx]
+			e = sliceEnergy
+			for col in range(min(pixels.cols,len(e))):
+				pixels.setLightColumn(e[col*2],col+1,colors[col])
+			pixels.show()
+			tidx = tidx + 1
+			#if tidx >= len(sliceEnergies):
+			#	break
+			nextTime = startTime + tidx*dt
+			#print tidx,time.time(),startTime,nextTime
+		time.sleep(0.001)
 
 	print 'Name: {0}, Song length: {1}:{2}, Sample Rate: {3} kHz'.format(songName,int(math.floor(minutes)),int(math.floor(sec)),fs/1000.0)
 	print bands
