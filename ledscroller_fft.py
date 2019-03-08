@@ -4,6 +4,10 @@ import random
 import numpy as np
 import vlc
 
+#from Tkinter import Tk
+#from tkinter.filedialog import askopenfilename
+import tkFileDialog
+
 from pydub import AudioSegment
 from pydub.playback import play
 
@@ -17,6 +21,7 @@ NEOPIXEL_HIGH3 	= 0b110
 NEOPIXEL_LOW3	= 0b100
 BYTES_PER_PIXEL	= 3
 SPI_BAUD		= 2400000
+MAX_INTENSITY	= 40
 #BYTES_PER_PIXEL	= 24
 #SPI_BAUD		= 6000000 
  
@@ -30,7 +35,7 @@ class NeoPixel_FT232H(object):
 		self.buffer = bytearray(num_pixels*BYTES_PER_PIXEL*3)
 		self.lookup = self.build_byte_lookup()
 		#print self.lookup
-		self.set_brightness(25) #set brightness to 25% by default
+		self.set_brightness(MAX_INTENSITY/2) #set brightness to 25% by default
 		self.num_pixels	= num_pixels
 		self.rows 		= num_rows
 		self.cols 		= num_pixels/num_rows
@@ -62,10 +67,10 @@ class NeoPixel_FT232H(object):
 		return lookup
 	
 	def clear_pixels(self):
+		nullColor = {'red':0,'green':0,'blue':0}
 		for row in range(self.rows):
 			for col in range(self.cols):
-				color = {'red':0,'green':0,'blue':0}
-				pixels.set_pixelRC(row+1,col+1,color)
+				pixels.set_pixelRC(row+1,col+1,nullColor)
 				
 		pixels.show()
  
@@ -86,7 +91,7 @@ class NeoPixel_FT232H(object):
 		self.set_pixel_color(n,color['red'],color['green'],color['blue'])
 	
 	def set_brightness(self, brightpcent):
-		self.bright = math.pow(brightpcent/100.0,2.2)
+		self.bright = math.pow(min(brightpcent,MAX_INTENSITY)/100.0,2.2)
  
 	def show(self):
 		# Send the pixel buffer out the SPI data output pin (D1) as a NeoPixel
@@ -104,7 +109,7 @@ if __name__ == '__main__':
 	# Only up to ~340 pixels can be written using the FT232H.
 	# Create a NeoPixel_FT232H object.
 	pixels = NeoPixel_FT232H(512,8)
-	pixels.set_brightness(15)
+	pixels.set_brightness(25)
 	delay = 0.02
 	# Animate each pixel turning red.
 	# Loop through each pixel.
@@ -143,12 +148,18 @@ if __name__ == '__main__':
 		time.sleep(delay)
 
 	#path to file
-	filePath = ".\\The Longest Road (Deadmau5 Remix).mp3"
+	
+	#Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
+	filename = tkFileDialog.askopenfilename() # show an "Open" dialog box and return the path to the selected file
+	#root.update()
+	filePath = ".\\Lights (Bassnectar Remix).mp3"
+	filePath = filename
 	fileType = filePath.split('.')[-1]
 	songName = filePath.split('\\')[-1].split('.')[0]
 	
 	#open audio file
 	sound = AudioSegment.from_file(filePath, format=fileType)
+	maxVolume = sound.max_dBFS
 	stereosample = sound.get_array_of_samples()
 	#add left and right channels together
 	samples = np.add(stereosample[::2],stereosample[1::2])
@@ -160,7 +171,7 @@ if __name__ == '__main__':
 	
 	#setup fft junk
 	fs = sound.frame_rate
-	dt = 1.0/15.0;
+	dt = 1.0/30.0;
 	bands = [0,15,30,
 			45,60,
 			75,90,105,120,
@@ -178,58 +189,78 @@ if __name__ == '__main__':
 	N = int(fs*dt)
 	f = range(0,fs/2,fs/N)
 	tot_e = 1.0
-	iterMax = len(samples)
 	bandIndex = np.floor(np.array(bands)*dt+1.0)
 	bandIndex = bandIndex.astype(int)
 	
 	colors = []
 	
-	for i in range(12):
-		colors.append({'red':0xFF,'green':i*255/11,'blue':0x00})
-	for i in range(12):
-		colors.append({'red':0xFF-i*255/11,'green':0xFF,'blue':0x00})
-	for i in range(12):
-		colors.append({'red':0x00,'green':0xFF,'blue':i*255/11})
-	for i in range(12):
-		colors.append({'red':0x00,'green':0xFF-i*255/11,'blue':0xFF})
-	for i in range(12):
-		colors.append({'red':i*255/11,'green':0x00,'blue':0xFF})
-	for i in range(12):
-		colors.append({'red':0xFF,'green':0x00,'blue':0xFF-i*255/11})
+	for i in range(11):
+		colors.append({'red':0xFF,'green':i*255/10,'blue':0x00})
+	for i in range(11):
+		colors.append({'red':0xFF-i*255/10,'green':0xFF,'blue':0x00})
+	for i in range(11):
+		colors.append({'red':0x00,'green':0xFF,'blue':i*255/10})
+	for i in range(11):
+		colors.append({'red':0x00,'green':0xFF-i*255/10,'blue':0xFF})
+	for i in range(11):
+		colors.append({'red':i*255/10,'green':0x00,'blue':0xFF})
+	for i in range(11):
+		colors.append({'red':0xFF,'green':0x00,'blue':0xFF-i*255/10})
 		
 	#play the file
 	p = vlc.MediaPlayer(filePath)
 	p.play()
-	audioDelay = 0.3
+	audioDelay = 0.5
 	startTime = nextTime = time.time()
 	nextTime = nextTime + audioDelay
 	tidx = 0
 	dropRate = 2.0
+	output = [1]*pixels.cols
+	curIntensity = 10
+	avgEnergy = 10
 	
 	while nextTime < startTime + len(sound)/1000.0:
 		if time.time() > nextTime:
-			t0 = int(round(fs*dt*tidx))
-			tf = int(round(fs*dt) + t0)-1
-			if tf > len(samples):
+			dtAdjust = dt if tidx > 1 else 0
+			N = int(fs*(dt+dtAdjust))
+			f = range(0,fs/2,fs/N)
+			bandIndex = np.floor(np.array(bands)*(dt+dtAdjust)+1.0)
+			bandIndex = bandIndex.astype(int)
+			
+			t0 = dt*tidx-dtAdjust
+			tf = t0 + dt + dtAdjust
+			curVolume = sound[round(1000*t0):round(1000*tf)].max_dBFS
+	
+			s0 = int(round(fs*t0))
+			sf = int(round(fs*(dt+dtAdjust)) + s0)-1
+			if sf > len(samples):
 				break
-			slice = samples[t0:tf]
+			slice = samples[s0:sf]
 			sliceFFT = np.fft.rfft(slice)
 			sliceFFTA = np.abs(sliceFFT)[0:len(f)-1]
 			for ii in range(len(bands)-2):
 				energy[ii] = sum(sliceFFTA[bandIndex[ii]:bandIndex[ii+1]])
 			sliceEnergy = energy*tidx/tot_e
-			#sliceEnergies.append(sliceEnergy)
-			
-			tot_e = tot_e + np.mean(energy)
-			#e = sliceEnergies[tidx]
-			e = sliceEnergy
-			for col in range(min(pixels.cols,len(e))):
+
+			tot_e += np.mean(energy)
+			for col in range(min(pixels.cols,len(sliceEnergy))):
 				maxRows[col] = maxRows[col] + dropRate*dt
-				maxRow = (pixels.rows-1)-e[col]
+				maxRow = (pixels.rows-1)-sliceEnergy[col]
 				maxRows[col] = min(maxRow+2,maxRows[col],8)
 				maxRows[col] = max(maxRows[col],1)
-				pixels.setLightColumn(int(maxRow),col+1,colors[col])
+				maxRowInt = int(maxRow) if int(maxRow) < pixels.rows-1 else min(output[(col-1)%pixels.cols]+1,6)
+				maxRowInt = int(maxRow)
+				#setColor = colors[(col + tidx) % len(colors)]
+				setColor = colors[col]
+				pixels.setLightColumn(maxRowInt,col+1,setColor)
+				output[col] = maxRowInt
 				#pixels.set_pixelRC(int(maxRows[col]),col+1,colors[col])
+			#setIntensity = MAX_INTENSITY*(curVolume+6)/(maxVolume+6)
+			avgEnergy += (dt/5.0)*(sum(energy) - avgEnergy)
+			setIntensity = MAX_INTENSITY*(sum(energy)+sum(energy[0:10]))/(2*avgEnergy)
+			alpha = dt/0.5
+			curIntensity += alpha*(setIntensity - curIntensity)
+			pixels.set_brightness(max(10,curIntensity))
 			pixels.show()
 			tidx = tidx + 1
 			#if tidx >= len(sliceEnergies):
