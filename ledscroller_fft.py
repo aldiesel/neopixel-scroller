@@ -8,6 +8,8 @@ import vlc
 #from tkinter.filedialog import askopenfilename
 import tkFileDialog
 
+from ledtextgen import *
+
 from pydub import AudioSegment
 from pydub.playback import play
 
@@ -65,14 +67,16 @@ class NeoPixel_FT232H(object):
 				
 			lookup[i] = value
 		return lookup
-	
+		
 	def clear_pixels(self):
 		nullColor = {'red':0,'green':0,'blue':0}
 		for row in range(self.rows):
 			for col in range(self.cols):
-				pixels.set_pixelRC(row+1,col+1,nullColor)
-				
-		pixels.show()
+				self.set_pixelRC(row+1,col+1,nullColor)
+	
+	def clear_screen(self):
+		self.clear_pixels()	
+		self.show()
  
 	def set_pixel_color(self, n, r, g, b):
 		# Set the pixel RGB color for the pixel at position n.
@@ -101,7 +105,15 @@ class NeoPixel_FT232H(object):
 	def setLightColumn(self,maxRow,col,color):
 		for row in range(self.rows):
 			setColor = color if (row > maxRow) else {'red':0,'green':0,'blue':0}
-			self.set_pixelRC(row+1,col,setColor)
+			if (row > maxRow):
+				self.set_pixelRC(row+1,col,setColor)
+	
+	def setCharColumn(self,col,byte,color):
+		for bit in range(8):
+			if byte >> bit & 1:
+				self.set_pixelRC(bit+1,col,color)
+			#else:
+			#	self.set_pixelRC(bit+1,col,{'red':20,'green':20,'blue':20})
  
 # Run this code when the script is called at the command line:
 if __name__ == '__main__':
@@ -114,7 +126,7 @@ if __name__ == '__main__':
 	# Animate each pixel turning red.
 	# Loop through each pixel.
 	print 'Total pixels: {0}, Rows: {1}, Columns: {2}'.format(pixels.num_pixels,pixels.rows,pixels.cols)
-	pixels.clear_pixels()
+	pixels.clear_screen()
 	time.sleep(delay)
 	maxRows = [0]*pixels.cols
 	
@@ -154,8 +166,8 @@ if __name__ == '__main__':
 	#root.update()
 	filePath = ".\\Lights (Bassnectar Remix).mp3"
 	filePath = filename
-	fileType = filePath.split('.')[-1]
-	songName = filePath.split('\\')[-1].split('.')[0]
+	fileType = filePath.rsplit('.',1)[-1]
+	songName = filePath.split('/')[-1].rsplit('.',1)[0]
 	
 	#open audio file
 	sound = AudioSegment.from_file(filePath, format=fileType)
@@ -208,6 +220,7 @@ if __name__ == '__main__':
 		colors.append({'red':0xFF,'green':0x00,'blue':0xFF-i*255/10})
 		
 	#play the file
+	print 'Name: {0}, Song length: {1}:{2}, Sample Rate: {3} kHz'.format(songName,int(math.floor(minutes)),int(math.floor(sec)),fs/1000.0)
 	p = vlc.MediaPlayer(filePath)
 	p.play()
 	audioDelay = 0.5
@@ -243,18 +256,52 @@ if __name__ == '__main__':
 			sliceEnergy = energy*tidx/tot_e
 
 			tot_e += np.mean(energy)
+			
+			#create test display string
+			timeString = "%02d:%02d" % divmod(dt*tidx,60)
+			testString = songName+'  '
+			stringCols = []
+			for char in range(len(testString)):
+				tmpChar = testString[char]
+				tmpDisplayChar = font[ord(tmpChar)]
+				for col in tmpDisplayChar:
+					stringCols.append(col)
+				stringCols.append(0)
+				
+			stringCols2 = []
+			timeString += max(1,(32-len(timeString))/2)*' '
+			for char in range(len(timeString)):
+				tmpChar = timeString[char]
+				tmpDisplayChar = font[ord(tmpChar)]
+				for col in tmpDisplayChar:
+					stringCols2.append(int('{:08b}'.format(col)[::-1], 2))
+				stringCols2.append(0)
+			
+			pixels.clear_pixels()
+			
 			for col in range(min(pixels.cols,len(sliceEnergy))):
+				
 				maxRows[col] = maxRows[col] + dropRate*dt
 				maxRow = (pixels.rows-1)-sliceEnergy[col]
 				maxRows[col] = min(maxRow+2,maxRows[col],8)
 				maxRows[col] = max(maxRows[col],1)
 				maxRowInt = int(maxRow) if int(maxRow) < pixels.rows-1 else min(output[(col-1)%pixels.cols]+1,6)
 				maxRowInt = int(maxRow)
-				#setColor = colors[(col + tidx) % len(colors)]
+				#setColor = colors[(col + tidx) % len(colors)] #roll through colors
 				setColor = colors[col]
 				pixels.setLightColumn(maxRowInt,col+1,setColor)
 				output[col] = maxRowInt
 				#pixels.set_pixelRC(int(maxRows[col]),col+1,colors[col])
+				
+				showCol = (col+int(tidx/5))%len(stringCols)
+				showCol2 = (63-col-int(tidx/5))%len(stringCols2)
+				#showCol2 = (63-col)%len(stringCols2)
+				textColor = {'red':224,'green':128,'blue':0}
+				if col >= 0 and col < 32:
+					pixels.setCharColumn(col+1,stringCols[showCol],textColor)
+				if col >= 32 and col < 64:
+					pixels.setCharColumn(col+1,stringCols2[showCol2] >> 1,textColor)
+					
 			#setIntensity = MAX_INTENSITY*(curVolume+6)/(maxVolume+6)
 			avgEnergy += (dt/5.0)*(sum(energy) - avgEnergy)
 			setIntensity = MAX_INTENSITY*(sum(energy)+sum(energy[0:10]))/(2*avgEnergy)
@@ -268,7 +315,5 @@ if __name__ == '__main__':
 			nextTime = startTime + tidx*dt
 			#print tidx,time.time(),startTime,nextTime
 		time.sleep(0.001)
-
-	print 'Name: {0}, Song length: {1}:{2}, Sample Rate: {3} kHz'.format(songName,int(math.floor(minutes)),int(math.floor(sec)),fs/1000.0)
 	#print bands
 	#print f
