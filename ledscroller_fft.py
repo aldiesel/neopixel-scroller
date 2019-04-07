@@ -29,6 +29,31 @@ MAX_INTENSITY	= 40
  
 class NeoPixel_FT232H(object):
 	def __init__(self, num_pixels, num_rows):
+		# Create a libftdi context.
+		ctx = None
+		ctx = ftdi.new()
+		# Define USB vendor and product ID
+		vid = 0x0403
+		pid = 0x6014
+		# Enumerate FTDI devices.
+		self.serial = None
+		device_list = None
+		count, device_list = ftdi.usb_find_all(ctx, vid, pid)
+		while device_list is not None:
+			# Get USB device strings and add serial to list of devices.
+			ret, manufacturer, description, serial = ftdi.usb_get_strings(ctx, device_list.dev, 256, 256, 256)
+			print 'return: {0}, manufacturer: {1}, description: {2}, serial: |{3}|'.format(ret,manufacturer,description,serial)
+			if 'FTDI' in manufacturer and 'Serial' in description and 'FT' in serial:
+				self.serial = serial
+			device_list = device_list.next
+		# Make sure to clean up list and context when done.
+		if device_list is not None:
+			ftdi.list_free(device_list)
+		if ctx is not None:
+			ftdi.free(ctx)	
+		
+		# Create an FT232H object.
+		self.ft232h = FT232H.FT232H(serial=self.serial)
 		# Create an FT232H object.
 		self.ft232h = FT232H.FT232H()
 		# Create a SPI interface for the FT232H object.  Set the SPI bus to 6mhz.
@@ -190,9 +215,9 @@ if __name__ == '__main__':
 			135,150,165,180,195,210,240,
 			255,270,285,300,315,330,360,375,415,480,510,
 			525,555,600,630,660,720,750,795,840,885,945,1005,
-			1200,1405,1680,1845,2010,
-			2400,2810,3330,4020,
-			4800,5620,6660,8040]
+			1200,1302,1405,1535,1680,1845,2010,
+			2400,2605,2810,3070,3360,3690,4020,
+			4800,5000,5210,5400,5620,5800,6140,6300,6660,7350,8040]
 	while bands[-1] < fs/2 - 500:
 		bands.append(bands[-1]+500)
 	bands[-1] = fs/2
@@ -220,10 +245,10 @@ if __name__ == '__main__':
 		colors.append({'red':0xFF,'green':0x00,'blue':0xFF-i*255/10})
 		
 	#play the file
-	print 'Name: {0}, Song length: {1}:{2}, Sample Rate: {3} kHz'.format(songName,int(math.floor(minutes)),int(math.floor(sec)),fs/1000.0)
+	print 'Name: {0}, Song length: {1}:{2:02d}, Sample Rate: {3} kHz'.format(songName,int(math.floor(minutes)),int(math.floor(sec)),fs/1000.0)
 	p = vlc.MediaPlayer(filePath)
 	p.play()
-	audioDelay = 0.5
+	audioDelay = 0.4
 	startTime = nextTime = time.time()
 	nextTime = nextTime + audioDelay
 	tidx = 0
@@ -263,13 +288,15 @@ if __name__ == '__main__':
 			stringCols = []
 			for char in range(len(testString)):
 				tmpChar = testString[char]
-				tmpDisplayChar = font[ord(tmpChar)]
+				try:
+					tmpDisplayChar = font[ord(tmpChar)]
+				except:
+					tmpDisplayChar = ' '
 				for col in tmpDisplayChar:
 					stringCols.append(col)
 				stringCols.append(0)
 				
 			stringCols2 = []
-			timeString += max(1,(32-len(timeString))/2)*' '
 			for char in range(len(timeString)):
 				tmpChar = timeString[char]
 				tmpDisplayChar = font[ord(tmpChar)]
@@ -277,10 +304,23 @@ if __name__ == '__main__':
 					stringCols2.append(int('{:08b}'.format(col)[::-1], 2))
 				stringCols2.append(0)
 			
+			for i in range(32-len(stringCols2)):
+				stringCols2.append(0)
+			
 			pixels.clear_pixels()
 			
 			for col in range(min(pixels.cols,len(sliceEnergy))):
-				
+				pixels.set_brightness(20)
+				showCol = (col+int(tidx/5))%len(stringCols)
+				showCol2 = (63-col-int(tidx/5))%len(stringCols2)
+				#showCol2 = (63-col)%len(stringCols2)
+				#textColor = {'red':100,'green':100,'blue':100}
+				#if col >= 0 and col < 32:
+				#	pixels.setCharColumn(col+1,stringCols[showCol],textColor)
+				#if col >= 32 and col < 64:
+				#	pixels.setCharColumn(col+1,stringCols2[showCol2] >> 1,textColor)
+			
+				pixels.set_brightness(max(10,curIntensity))
 				maxRows[col] = maxRows[col] + dropRate*dt
 				maxRow = (pixels.rows-1)-sliceEnergy[col]
 				maxRows[col] = min(maxRow+2,maxRows[col],8)
@@ -293,14 +333,6 @@ if __name__ == '__main__':
 				output[col] = maxRowInt
 				#pixels.set_pixelRC(int(maxRows[col]),col+1,colors[col])
 				
-				showCol = (col+int(tidx/5))%len(stringCols)
-				showCol2 = (63-col-int(tidx/5))%len(stringCols2)
-				#showCol2 = (63-col)%len(stringCols2)
-				textColor = {'red':224,'green':128,'blue':0}
-				if col >= 0 and col < 32:
-					pixels.setCharColumn(col+1,stringCols[showCol],textColor)
-				if col >= 32 and col < 64:
-					pixels.setCharColumn(col+1,stringCols2[showCol2] >> 1,textColor)
 					
 			#setIntensity = MAX_INTENSITY*(curVolume+6)/(maxVolume+6)
 			avgEnergy += (dt/5.0)*(sum(energy) - avgEnergy)

@@ -9,32 +9,31 @@ import Adafruit_GPIO.FT232H as FT232H
  
 class NeoPixel_FT232H(object):
 	def __init__(self, num_pixels, num_rows):
-		#devices = FT232H.enumerate_device_serials()
-		#for device in devices:
-		#	print(device)
-		
-		## Create temp def
-		#vid = 0x0403   # Default FTDI FT232H vendor ID
-		#pid = 0x6014   # Default FTDI FT232H product ID
-		## Create a libftdi context.
-		#ctx = None
-		#ctx = ftdi.new()
-		## Enumerate FTDI devices.
-		#device_list = None
-		#count, device_list = ftdi.usb_find_all(ctx, vid, pid)
-		#while device_list is not None:
-		#	# Get USB device strings and add serial to list of devices.
-		#	ret, manufacturer, description, serial = ftdi.usb_get_strings(ctx, device_list.dev, 256, 256, 256)
-		#	print 'ret: {0}, manufacturer: {1}, description: {2}, serial: |{3}|'.format(ret,manufacturer,description,serial)
-		#	device_list = device_list.next
-		## Make sure to clean up list and context when done.
-		#if device_list is not None:
-		#	ftdi.list_free(device_list)
-		#if ctx is not None:
-		#	ftdi.free(ctx)	
+		# Create a libftdi context.
+		ctx = None
+		ctx = ftdi.new()
+		# Define USB vendor and product ID
+		vid = 0x0403
+		pid = 0x6014
+		# Enumerate FTDI devices.
+		self.serial = None
+		device_list = None
+		count, device_list = ftdi.usb_find_all(ctx, vid, pid)
+		while device_list is not None:
+			# Get USB device strings and add serial to list of devices.
+			ret, manufacturer, description, serial = ftdi.usb_get_strings(ctx, device_list.dev, 256, 256, 256)
+			print 'return: {0}, manufacturer: {1}, description: {2}, serial: |{3}|'.format(ret,manufacturer,description,serial)
+			if 'FTDI' in manufacturer and 'Serial' in description and 'FT' in serial:
+				self.serial = serial
+			device_list = device_list.next
+		# Make sure to clean up list and context when done.
+		if device_list is not None:
+			ftdi.list_free(device_list)
+		if ctx is not None:
+			ftdi.free(ctx)	
 		
 		# Create an FT232H object.
-		self.ft232h = FT232H.FT232H()
+		self.ft232h = FT232H.FT232H(serial=self.serial)
 		# Create a SPI interface for the FT232H object.  Set the SPI bus to 6mhz.
 		self.spi    = FT232H.SPI(self.ft232h, max_speed_hz=6000000)
 		# Create a pixel data buffer and lookup table.
